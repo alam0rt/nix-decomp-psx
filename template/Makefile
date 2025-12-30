@@ -37,10 +37,15 @@ SRC_DIR := src
 # -----------------------------------------------------------------------------
 
 # PSX compiler (PSY-Q GCC 2.6 based)
+# REQUIRED for matching decompilation - modern GCC won't produce matching code
+# Download with: ./tools/download-toolchain.sh
 CC1_PSX := bin/cc1-psx-26
 
 # MIPS cross-toolchain (from Nix environment)
-CROSS := mipsel-linux-gnu-
+# Note: Nix provides mipsel-unknown-linux-gnu-*, not mipsel-linux-gnu-*
+# The binutils (as, ld, objcopy) work fine with any version
+# Only cc1-psx-26 needs to be the exact PSY-Q version for matching
+CROSS := mipsel-unknown-linux-gnu-
 AS := $(CROSS)as
 LD := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
@@ -48,7 +53,7 @@ CPP := $(CROSS)cpp
 CC := $(CROSS)gcc
 STRIP := $(CROSS)strip
 
-# maspsx - PSX assembler macro expander
+# maspsx - PSX assembler macro expander (replicates PSY-Q ASPSX behavior)
 MASPSX := python3 tools/maspsx/maspsx.py
 
 # Python (from Nix environment)

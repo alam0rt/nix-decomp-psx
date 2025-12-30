@@ -29,7 +29,7 @@
           pyyaml
           intervaltree
           watchdog
-          python-Levenshtein
+          levenshtein
           cxxfilt
           tabulate
           requests
@@ -37,7 +37,6 @@
 
           # Development tools
           black
-          pre-commit
 
           # Package management (for installing pinned versions)
           pip

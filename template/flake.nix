@@ -26,13 +26,12 @@
           pyyaml
           intervaltree
           watchdog
-          python-Levenshtein
+          levenshtein
           cxxfilt
           tabulate
           requests
           graphviz
           black
-          pre-commit
           pip
           virtualenv
         ]);

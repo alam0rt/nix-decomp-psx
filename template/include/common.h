@@ -63,13 +63,18 @@ typedef s32 fixed32;    /* 16.16 fixed point */
 /* -----------------------------------------------------------------------------
  * Include ASM macro
  * -------------------------------------------------------------------------- */
-/* Used to include assembly files for functions not yet decompiled */
+/* 
+ * splat generates include/include_asm.h with the proper INCLUDE_ASM macro.
+ * If generate_asm_macros_files is enabled in your splat yaml, use that instead.
+ * This is a fallback definition.
+ */
 
 #ifndef INCLUDE_ASM
-#define _STRINGIFY(x) #x
-#define STRINGIFY(x) _STRINGIFY(x)
-
-/* Modern splat format */
+/* Include splat-generated macro if available */
+#if __has_include("include_asm.h")
+#include "include_asm.h"
+#else
+/* Fallback: Modern splat format for non-matching/WIP builds */
 #define INCLUDE_ASM(DIR, FUNC) \
     __asm__( \
         ".section .text\n" \
@@ -79,6 +84,7 @@ typedef s32 fixed32;    /* 16.16 fixed point */
         ".set reorder\n" \
         ".set at\n" \
     )
+#endif
 #endif
 
 /* -----------------------------------------------------------------------------

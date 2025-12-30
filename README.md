@@ -64,7 +64,21 @@ disks/
 
 ### 4. Configure Splat
 
-Copy and customize the splat configuration:
+**Option A: Generate config automatically (recommended)**
+
+```bash
+# Enter dev environment first
+nix develop
+
+# Generate a config file from your binary
+python3 -m splat create_config disks/us/SLUS_XXX.XX
+
+# This creates a yaml file based on the ROM header
+# Move it to the config directory
+mv *.yaml config/splat.us.yaml
+```
+
+**Option B: Use the template**
 
 ```bash
 cp config/splat.example.yaml config/splat.us.yaml
@@ -72,9 +86,10 @@ cp config/splat.example.yaml config/splat.us.yaml
 ```
 
 Key things to configure:
+- `name`: Your game's name
+- `sha1`: SHA1 checksum (`sha1sum disks/us/SLUS_XXX.XX`)
 - `target_path`: Path to your game binary
-- `sha1`: SHA1 checksum of the binary
-- `vram`: Load address (check with a PSX debugger or readelf)
+- `vram`: Load address (typically 0x80010000 for PSX)
 - `segments`: Binary segment definitions
 
 ### 5. Enter Development Environment
