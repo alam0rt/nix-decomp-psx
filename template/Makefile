@@ -36,31 +36,62 @@ SRC_DIR := src
 # Toolchain Configuration
 # -----------------------------------------------------------------------------
 
-# PSX compiler (PSY-Q GCC 2.6 based)
-# REQUIRED for matching decompilation - modern GCC won't produce matching code
+# OLD-GCC TOOLCHAIN (Modern Approach - recommended for GCC-compiled games)
+# =========================================================================
+# Uses gcc 2.95.2 from decompals/old-gcc - matches PSY-Q 4.6's CC1PSX.EXE
 # Download with: ./tools/download-toolchain.sh
-CC1_PSX := bin/cc1-psx-26
+# This eliminates the need for wine/dosemu2 to run original PSY-Q tools!
+#
+# For games compiled with PSY-Q SDK's ccpsx (most commercial titles):
+#   GCC_VERSION := 2.95.2    # Same as PSY-Q 4.6
+#   GCC_VERSION := 2.91.66   # EGCS 1.1.2, similar to PSY-Q 4.4/4.5
+#   GCC_VERSION := 2.7.2     # Older PSY-Q versions
+#   GCC_VERSION := 2.6.0     # Very old PSY-Q (with -psx suffix)
+#
+# Run: make detect-compiler to analyze your binary's compiler signature
+
+GCC_VERSION := 2.95.2
+GCC_DIR := tools/gcc-$(GCC_VERSION)
+
+# Old GCC compiler (cc1 is the actual compiler backend)
+CC1 := $(GCC_DIR)/cc1
+GCC := $(GCC_DIR)/gcc
 
 # MIPS cross-toolchain (from Nix environment)
 # Note: Nix provides mipsel-unknown-linux-gnu-*, not mipsel-linux-gnu-*
-# The binutils (as, ld, objcopy) work fine with any version
-# Only cc1-psx-26 needs to be the exact PSY-Q version for matching
+# The binutils (as, ld, objcopy) are version-independent for linking
 CROSS := mipsel-unknown-linux-gnu-
 AS := $(CROSS)as
 LD := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
-CPP := $(CROSS)cpp
-CC := $(CROSS)gcc
+CPP := cpp
 STRIP := $(CROSS)strip
 
-# maspsx - PSX assembler macro expander (replicates PSY-Q ASPSX behavior)
+# maspsx - Modern ASPSX replacement
+# Transforms GCC assembly output to match PSY-Q ASPSX.EXE behavior
+# See: https://github.com/mkst/maspsx
 MASPSX := python3 tools/maspsx/maspsx.py
+
+# maspsx configuration (adjust based on your game's PSY-Q version)
+# PSY-Q 3.3 -> --aspsx-version=2.21
+# PSY-Q 3.5 -> --aspsx-version=2.34
+# PSY-Q 4.0 -> --aspsx-version=2.56
+# PSY-Q 4.1 -> --aspsx-version=2.67
+# PSY-Q 4.3 -> --aspsx-version=2.77
+# PSY-Q 4.4 -> --aspsx-version=2.79
+# PSY-Q 4.5 -> --aspsx-version=2.81
+# PSY-Q 4.6 -> --aspsx-version=2.86
+ASPSX_VERSION := 2.86
+MASPSX_FLAGS := --aspsx-version=$(ASPSX_VERSION) --run-assembler --gnu-as-path=$(AS)
 
 # Python (from Nix environment)
 PYTHON := python3
 
 # splat binary splitting tool
 SPLAT := $(PYTHON) -m splat split
+
+# m2c - MIPS to C decompiler
+M2C := $(PYTHON) tools/m2c/m2c.py
 
 # -----------------------------------------------------------------------------
 # Compiler Flags
