@@ -33,29 +33,33 @@ ASM_DIR := asm/$(VERSION)
 SRC_DIR := src
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Toolchain Configuration
 # -----------------------------------------------------------------------------
 
-# OLD-GCC TOOLCHAIN (Modern Approach - recommended for GCC-compiled games)
-# =========================================================================
-# Uses gcc 2.95.2 from decompals/old-gcc - matches PSY-Q 4.6's CC1PSX.EXE
-# Download with: ./tools/download-toolchain.sh
-# This eliminates the need for wine/dosemu2 to run original PSY-Q tools!
+# GCC 2.95.3 TOOLCHAIN (From Nix minimal-bootstrap)
+# =================================================
+# The flake provides GCC 2.95.3 via Nix's minimal-bootstrap package.
+# This matches PSY-Q 4.6/4.7's CC1PSX.EXE compiler output.
 #
-# For games compiled with PSY-Q SDK's ccpsx (most commercial titles):
-#   GCC_VERSION := 2.95.2    # Same as PSY-Q 4.6
-#   GCC_VERSION := 2.91.66   # EGCS 1.1.2, similar to PSY-Q 4.4/4.5
-#   GCC_VERSION := 2.7.2     # Older PSY-Q versions
-#   GCC_VERSION := 2.6.0     # Very old PSY-Q (with -psx suffix)
+# NO EXTERNAL DOWNLOADS REQUIRED - everything comes from Nix!
 #
-# Run: make detect-compiler to analyze your binary's compiler signature
+# The GCC295_PATH environment variable is set by the flake's shellHook.
+# If you need a different GCC version (2.7.2, 2.8.1, etc.), you can:
+#   1. Download from decompals/old-gcc: ./tools/download-toolchain.sh 2.7.2
+#   2. Override GCC_DIR below
 
-GCC_VERSION := 2.95.2
-GCC_DIR := tools/gcc-$(GCC_VERSION)
-
-# Old GCC compiler (cc1 is the actual compiler backend)
-CC1 := $(GCC_DIR)/cc1
-GCC := $(GCC_DIR)/gcc
+# GCC from Nix (set by flake) or fallback to downloaded version
+ifdef GCC295_PATH
+  CC1 := $(GCC295_PATH)/bin/cc1
+  GCC := $(GCC295_PATH)/bin/gcc
+else
+  # Fallback: downloaded old-gcc
+  GCC_VERSION := 2.95.2
+  GCC_DIR := tools/gcc-$(GCC_VERSION)
+  CC1 := $(GCC_DIR)/cc1
+  GCC := $(GCC_DIR)/gcc
+endif
 
 # MIPS cross-toolchain (from Nix environment)
 # Note: Nix provides mipsel-unknown-linux-gnu-*, not mipsel-linux-gnu-*
@@ -81,6 +85,7 @@ MASPSX := python3 tools/maspsx/maspsx.py
 # PSY-Q 4.4 -> --aspsx-version=2.79
 # PSY-Q 4.5 -> --aspsx-version=2.81
 # PSY-Q 4.6 -> --aspsx-version=2.86
+# PSY-Q 4.7 -> --aspsx-version=2.86 (same as 4.6)
 ASPSX_VERSION := 2.86
 MASPSX_FLAGS := --aspsx-version=$(ASPSX_VERSION) --run-assembler --gnu-as-path=$(AS)
 
@@ -88,6 +93,10 @@ MASPSX_FLAGS := --aspsx-version=$(ASPSX_VERSION) --run-assembler --gnu-as-path=$
 PYTHON := python3
 
 # splat binary splitting tool
+SPLAT := $(PYTHON) -m splat split
+
+# m2c - MIPS to C decompiler
+M2C := $(PYTHON) tools/m2c/m2c.py
 SPLAT := $(PYTHON) -m splat split
 
 # m2c - MIPS to C decompiler
@@ -146,24 +155,34 @@ all: $(BUILD_DIR)/$(PROJECT).bin
 
 # Show help
 help:
-	@echo "PSX Decompilation Project"
-	@echo "========================="
+	@echo "PSX Decompilation Project (Modern Workflow)"
+	@echo "============================================"
+	@echo ""
+	@echo "Toolchain: GCC $(GCC_VERSION) + maspsx (ASPSX $(ASPSX_VERSION))"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all       - Build the project (default)"
-	@echo "  extract   - Extract/disassemble the original binary using splat"
-	@echo "  expected  - Copy original binary to expected/ for comparison"
-	@echo "  diff      - Run asm-differ to compare output"
-	@echo "  check     - Verify build matches original (sha1sum)"
-	@echo "  context   - Generate context for decomp.me"
-	@echo "  clean     - Remove build artifacts"
-	@echo "  tools     - Download required toolchain binaries"
+	@echo "  all              - Build the project (default)"
+	@echo "  extract          - Extract/disassemble binary using splat"
+	@echo "  expected         - Copy original binary to expected/"
+	@echo "  check            - Verify build matches original"
+	@echo "  clean            - Remove build artifacts"
 	@echo ""
-	@echo "Decompilation workflow:"
-	@echo "  1. Place original binary in disks/$(VERSION)/"
-	@echo "  2. Run 'make extract' to disassemble"
-	@echo "  3. Run 'make' to build"
-	@echo "  4. Run 'make check' to verify match"
+	@echo "Decompilation:"
+	@echo "  diff FUNC=name   - Compare function with asm-differ"
+	@echo "  decompile FUNC=f - Decompile function with m2c"
+	@echo "  context          - Generate ctx.c for m2c"
+	@echo "  permuter FUNC=f  - Run decomp-permuter"
+	@echo ""
+	@echo "Tools:"
+	@echo "  tools            - Download GCC toolchain"
+	@echo "  detect-compiler  - Analyze binary's compiler"
+	@echo ""
+	@echo "Workflow:"
+	@echo "  1. ./tools/download-toolchain.sh"
+	@echo "  2. Place binary in disks/$(VERSION)/"
+	@echo "  3. make extract"
+	@echo "  4. make"
+	@echo "  5. make check"
 	@echo ""
 
 # -----------------------------------------------------------------------------
@@ -183,18 +202,23 @@ extract: $(SPLAT_CONFIG)
 $(BUILD_DIR)/:
 	mkdir -p $@
 
-# Compile C to object file using PSX compiler chain
-# 1. Preprocess with GCC
-# 2. Compile with PSY-Q cc1
-# 3. Process with maspsx (PSX assembler macros)
-# 4. Assemble to object
+# Compile C to object file using old-gcc + maspsx pipeline
+# This is the MODERN approach that doesn't require wine/dosemu2:
+#   1. Preprocess with system cpp
+#   2. Compile with old gcc cc1 (same codegen as PSY-Q)
+#   3. Pass through maspsx (replicates ASPSX.EXE behavior)
+#   4. Assemble with GNU as (via maspsx --run-assembler)
+#
+# The maspsx wrapper handles:
+#   - $gp-relative addressing
+#   - NOP insertion for pipeline hazards
+#   - div/rem expansion
+#   - .comm/.sdata handling
 $(BUILD_DIR)/%.c.o: $(SRC_DIR)/%.c | $(BUILD_DIR)/
 	@mkdir -p $(dir $@)
 	@echo "CC $<"
-	@$(CPP) $(CPPFLAGS) $< -o $(BUILD_DIR)/$*.i
-	@$(CC1_PSX) $(CFLAGS) $(BUILD_DIR)/$*.i -o $(BUILD_DIR)/$*.s
-	@$(MASPSX) --aspsx-version=2.21 $(BUILD_DIR)/$*.s -o $(BUILD_DIR)/$*.maspsx.s
-	@$(AS) $(ASFLAGS) $(BUILD_DIR)/$*.maspsx.s -o $@
+	$(CPP) $(CPPFLAGS) $< | $(CC1) $(CFLAGS) -o $(BUILD_DIR)/$*.s
+	$(MASPSX) $(MASPSX_FLAGS) $(ASFLAGS) $(BUILD_DIR)/$*.s -o $@
 
 # Assemble ASM files (from splat extraction or handwritten)
 $(BUILD_DIR)/%.s.o: $(ASM_DIR)/%.s | $(BUILD_DIR)/
@@ -248,24 +272,70 @@ ifndef FUNC
 	@echo "Usage: make diff FUNC=FunctionName"
 	@exit 1
 endif
-	$(PYTHON) tools/asm-differ/diff.py -mwo $(FUNC)
+	$(PYTHON) tools/asm-differ/diff.py -mwo3 $(FUNC)
 
-# Generate context for decomp.me
-# Usage: make context FILE=src/file.c
-context:
-ifndef FILE
-	@echo "Usage: make context FILE=src/file.c"
+# m2c - Decompile a function from assembly to C
+# Usage: make decompile FUNC=func_80012345
+decompile:
+ifndef FUNC
+	@echo "Usage: make decompile FUNC=func_80012345"
 	@exit 1
 endif
-	$(PYTHON) tools/m2c/m2ctx.py $(FILE)
+	$(M2C) --target mipsel-gcc-c --context ctx.c asm/$(VERSION)/nonmatchings/$(FUNC).s
+
+# Generate ctx.c context file for m2c/decomp.me
+# This creates a preprocessed version of all headers for m2c
+context: ctx.c
+
+ctx.c:
+	@echo "Generating context file..."
+	$(CPP) -P $(CPPFLAGS) include/common.h > ctx.c
+	@echo "Context saved to ctx.c"
+
+# Import function into decomp-permuter
+# Usage: make permuter-import FILE=src/main.c FUNC=FunctionName
+permuter-import:
+ifndef FILE
+	@echo "Usage: make permuter-import FILE=src/main.c FUNC=FunctionName"
+	@exit 1
+endif
+	$(PYTHON) tools/decomp-permuter/import.py $(FILE)
+
+# Run decomp-permuter on imported function
+# Usage: make permuter FUNC=FunctionName
+permuter:
+ifndef FUNC
+	@echo "Usage: make permuter FUNC=FunctionName"
+	@exit 1
+endif
+	$(PYTHON) tools/decomp-permuter/permuter.py nonmatchings/$(FUNC) --best-only -j4
 
 # -----------------------------------------------------------------------------
 # Tools
 # -----------------------------------------------------------------------------
 
-# Download toolchain binaries
+# Download toolchain binaries (old-gcc from decompals)
 tools:
 	./tools/download-toolchain.sh
+
+# Detect compiler signature in target binary
+# This helps identify which GCC version was used originally
+detect-compiler:
+	@echo "Analyzing binary for compiler signatures..."
+	@if strings $(TARGET) 2>/dev/null | grep -q "GCC:"; then \
+		echo "GCC signature found:"; \
+		strings $(TARGET) | grep "GCC:" | head -5; \
+	fi
+	@if strings $(TARGET) 2>/dev/null | grep -qi "psyq"; then \
+		echo "PSY-Q references found:"; \
+		strings $(TARGET) | grep -i "psyq" | head -5; \
+	fi
+	@echo ""
+	@echo "Common GCC versions for PSX:"
+	@echo "  PSY-Q 4.6 -> GCC 2.95.2"
+	@echo "  PSY-Q 4.4/4.5 -> GCC 2.91.66 (egcs 1.1.2)"
+	@echo "  PSY-Q 4.0-4.3 -> GCC 2.8.x"
+	@echo "  PSY-Q 3.x -> GCC 2.7.2 or 2.6.x"
 
 # -----------------------------------------------------------------------------
 # Cleanup

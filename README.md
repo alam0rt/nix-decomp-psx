@@ -176,8 +176,14 @@ Create a new C file in `src/` and add the decompiled function. Update `config/sp
 ### 4. Compare with Original
 
 ```bash
-# Run asm-differ to see differences
-python3 tools/asm-differ/diff.py -mwo FunctionName
+# Run asm-differ to see differences (use aliases for convenience)
+python3 tools/asm-differ/diff.py -mwo3 FunctionName
+
+# Or with the alias (after sourcing tools/.bash_aliases):
+ad FunctionName
+
+# Watch mode - auto-updates on file changes:
+ad FunctionName --watch
 ```
 
 ### 5. Iterate
@@ -188,10 +194,57 @@ Adjust the C code until the diff shows a match. Common techniques:
 - Use temp variables
 - Check decomp-permuter for variations
 
-### 6. Verify
+### 6. Use decomp-permuter
+
+When stuck on register allocation or instruction ordering:
+
+```bash
+# Import function for permutation
+python3 tools/decomp-permuter/import.py src/main.c
+
+# Run permuter (finds code variations that match better)
+python3 tools/decomp-permuter/permuter.py nonmatchings/FunctionName --best-only -j4
+```
+
+### 7. Verify
 
 ```bash
 make check
+```
+
+## Modern Workflow (No Wine/DOSEmu Required!)
+
+This template uses the **modern PSX decompilation approach** pioneered by [mkst/esa](https://github.com/mkst/esa):
+
+### The Toolchain
+
+| Component | Purpose |
+|-----------|---------|
+| **old-gcc** | Native Linux builds of GCC 2.x compilers from [decompals/old-gcc](https://github.com/decompals/old-gcc) |
+| **maspsx** | Python script that transforms GCC's assembly output to match PSY-Q's ASPSX.EXE |
+| **GNU as** | Standard MIPS assembler from binutils (via Nix) |
+| **GNU ld** | Standard MIPS linker from binutils (via Nix) |
+
+### Why This Works
+
+The original PSY-Q SDK used a customized GCC compiler. The key insight is that:
+
+1. **GCC 2.95.2** produces nearly identical code to PSY-Q 4.6's `CC1PSX.EXE`
+2. **maspsx** handles the small differences in assembly macro expansion
+3. Native Linux tools eliminate the need for wine/dosemu2
+
+### Compiler Version Mapping
+
+| PSY-Q Version | GCC Version | ASPSX Version |
+|--------------|-------------|---------------|
+| PSY-Q 4.6 | GCC 2.95.2 | 2.86 |
+| PSY-Q 4.4/4.5 | GCC 2.91.66 (egcs) | 2.79/2.81 |
+| PSY-Q 4.0-4.3 | GCC 2.8.x | 2.56-2.77 |
+| PSY-Q 3.x | GCC 2.7.2 | 2.21-2.34 |
+
+Detect your game's compiler with:
+```bash
+make detect-compiler
 ```
 
 ## Tools Reference
@@ -199,10 +252,24 @@ make check
 | Tool | Purpose | Usage |
 |------|---------|-------|
 | **splat** | Binary splitting/extraction | `make extract` |
-| **m2c** | MIPS to C decompiler | `python3 tools/m2c/m2c.py file.s` |
-| **asm-differ** | Compare ASM output | `python3 tools/asm-differ/diff.py -mwo FuncName` |
+| **m2c** | MIPS to C decompiler | `make decompile FUNC=func_name` |
+| **asm-differ** | Compare ASM output | `make diff FUNC=FuncName` |
 | **maspsx** | PSX assembler macros | Used automatically by Makefile |
-| **decomp-permuter** | Find matching code variations | See tool README |
+| **decomp-permuter** | Find matching code variations | `make permuter FUNC=FuncName` |
+| **ctx.py** | Generate m2c context | `make context` |
+
+### Bash Aliases
+
+For convenience, add to your shell:
+```bash
+source tools/.bash_aliases
+
+# Then use:
+ad FuncName      # asm-differ
+m2c file.s       # m2c with context
+di src/main.c    # decomp-permuter import
+dp nonmatchings/ # run permuter
+```
 
 ## Resources
 
@@ -211,6 +278,8 @@ make check
 - [splat Wiki](https://github.com/ethteck/splat/wiki)
 - [decomp.me](https://decomp.me/) - Collaborative decompilation platform
 - [PSX Dev Wiki](https://psx-dev.miraheze.org/)
+- [maspsx README](https://github.com/mkst/maspsx) - Modern ASPSX replacement
+- [esa Wiki](https://github.com/mkst/esa/wiki) - Reference PSX decomp project
 
 ### Community
 
@@ -221,19 +290,32 @@ make check
 
 - [sotn-decomp](https://github.com/Xeeynamo/sotn-decomp) - Castlevania: Symphony of the Night
 - [open-ribbon](https://github.com/open-ribbon/open-ribbon) - Vib-Ribbon
-- [esa-new](https://github.com/mkst/esa-new) - Reference PSX decomp setup
+- [esa](https://github.com/mkst/esa) - Evo's Space Adventures (modern toolchain reference)
+- [sssv](https://github.com/mkst/sssv) - Space Station Silicon Valley (N64/PSX)
 
 ## Known Limitations
 
-### Not Yet Supported
+### GTE Instructions
 
-- **dosemu2**: Required for some legacy PSY-Q DOS tools. Not packaged in Nix yet.
-  - Workaround: Use Docker, or native Linux builds of PSY-Q tools (cc1-psx-26)
-  - See: https://github.com/sozud/dosemu-deb
+Some PSX games use GTE (Geometry Transformation Engine) coprocessor instructions that require special handling:
 
-- **Saturn support**: Would require `sh-elf` binutils and Saturn-specific tooling.
+```s
+# These may appear as raw bytes in disassembly:
+.byte 0x00, 0xe8, 0xc8, 0x48  # Actually: ctc2 instruction
+```
 
-- **PSP support**: Would require Allegrex toolchain (allegrex-as, mwccpsp).
+You may need to add GTE macros to `include/gte.inc` for these cases.
+
+### dosemu2 (Legacy)
+
+If you need to run original 16-bit DOS PSY-Q tools:
+- Not packaged in Nix
+- Workaround: Docker or Ubuntu packages from https://github.com/sozud/dosemu-deb
+
+### Other Platforms
+
+- **Saturn**: Would require `sh-elf` binutils and Saturn-specific tooling
+- **PSP**: Would require Allegrex toolchain (allegrex-as, mwccpsp)
 
 ## Contributing
 
@@ -247,7 +329,7 @@ Contributions are welcome! Please open issues or PRs for:
 
 This template is released under the MIT License. See [LICENSE](LICENSE) for details.
 
-Note: The tools referenced as submodules have their own licenses. The PSX compiler binaries may have licensing restrictions from Sony - use them responsibly for educational/preservation purposes.
+Note: The tools referenced as submodules have their own licenses. The GCC binaries are GNU GPL. Use responsibly for educational/preservation purposes.
 
 ## Acknowledgments
 
@@ -256,5 +338,7 @@ This template is built on the incredible work of the decompilation community:
 - [@ethteck](https://github.com/ethteck) - splat, decomp.me, frogress
 - [@simonlindholm](https://github.com/simonlindholm) - asm-differ, decomp-permuter
 - [@matt-kempster](https://github.com/matt-kempster) - m2c (mips2c)
-- [@mkst](https://github.com/mkst) - maspsx, esa-new
+- [@mkst](https://github.com/mkst) - maspsx, esa, old-gcc toolchain approach
+- [@decompals](https://github.com/decompals) - old-gcc builds
 - The entire PSX and N64 decomp communities
+
